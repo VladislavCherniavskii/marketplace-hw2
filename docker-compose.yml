@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: marketplace
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d marketplace"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  flyway:
+    image: flyway/flyway:10-alpine
+    command: -url=jdbc:postgresql://db:5432/marketplace -user=postgres -password=postgres -connectRetries=60 migrate
+    volumes:
+      - ./src/main/resources/db/migration:/flyway/sql
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/marketplace
+      JWT_SECRET: supersecret
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  pgdata:
